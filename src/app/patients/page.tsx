@@ -29,6 +29,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import SearchIcon from "@mui/icons-material/Search";
 import PersonIcon from "@mui/icons-material/Person";
+import API_URL from "../../config/api";
 
 interface Patient {
   id: number;
@@ -87,7 +88,7 @@ export default function PatientsPage() {
         return;
       }
       try {
-        const res = await fetch("http://localhost:8000/api/patients/", {
+        const res = await fetch(`${API_URL}/api/patients/`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.status === 401) {
@@ -150,7 +151,7 @@ export default function PatientsPage() {
       return;
     }
     try {
-      const res = await fetch("http://localhost:8000/api/patients/", {
+      const res = await fetch(`${API_URL}/api/patients/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, ChangeEvent, FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
+import API_URL from "../../../config/api";
 
 interface IrisImage {
   id: number;
@@ -27,7 +28,7 @@ export default function VisitDetailPage() {
         return;
       }
       try {
-        const res = await fetch(`http://localhost:8000/api/visits/${id}/images/`, {
+        const res = await fetch(`${API_URL}/api/visits/${id}/images/`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.status === 401) {
@@ -73,7 +74,7 @@ export default function VisitDetailPage() {
     formData.append("image", file);
     formData.append("description", description);
     try {
-      const res = await fetch(`http://localhost:8000/api/visits/${id}/add_iris_image/`, {
+      const res = await fetch(`${API_URL}/api/visits/${id}/add_iris_image/`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -87,7 +88,7 @@ export default function VisitDetailPage() {
       setPreview(null);
       setDescription("");
       // Refresh images
-      const refreshed = await fetch(`http://localhost:8000/api/visits/${id}/images/`, {
+      const refreshed = await fetch(`${API_URL}/api/visits/${id}/images/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setImages(await refreshed.json());
@@ -134,7 +135,7 @@ export default function VisitDetailPage() {
         {images.map((img) => (
           <div key={img.id} className="bg-gray-50 p-2 rounded shadow">
             <img
-              src={`http://localhost:8000${img.image}`}
+              src={`${API_URL}${img.image}`}
               alt={img.description || "İris görseli"}
               className="w-full h-32 object-cover rounded mb-2"
             />

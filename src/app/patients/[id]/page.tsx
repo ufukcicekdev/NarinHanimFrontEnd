@@ -36,6 +36,7 @@ import {
   Edit as EditIcon,
   Close as CloseIcon
 } from "@mui/icons-material";
+import API_URL from "../../../config/api";
 
 interface Visit {
   id: number;
@@ -95,7 +96,7 @@ export default function PatientDetailPage() {
         return;
       }
       try {
-        const res = await fetch(`http://localhost:8000/api/patients/${id}/`, {
+        const res = await fetch(`${API_URL}/api/patients/${id}/`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.status === 401) {
@@ -128,7 +129,7 @@ export default function PatientDetailPage() {
       return;
     }
     try {
-      const res = await fetch(`http://localhost:8000/api/visits/`, {
+      const res = await fetch(`${API_URL}/api/visits/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -150,7 +151,7 @@ export default function PatientDetailPage() {
       setDiagnosis("");
       setNotes("");
       // Refresh patient data
-      const updated = await fetch(`http://localhost:8000/api/patients/${id}/`, {
+      const updated = await fetch(`${API_URL}/api/patients/${id}/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setPatient(await updated.json());
@@ -188,7 +189,7 @@ export default function PatientDetailPage() {
       return;
     }
     try {
-      const res = await fetch(`http://localhost:8000/api/patients/${id}/`, {
+             const res = await fetch(`${API_URL}/api/patients/${id}/`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
