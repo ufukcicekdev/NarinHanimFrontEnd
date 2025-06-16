@@ -1,34 +1,76 @@
 "use client";
-import { useEffect, useState, ChangeEvent, FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import ClientLayout from "../../components/ClientLayout";
+import Loading from "../../components/Loading";
 import API_URL from "../../../config/api";
+import {
+  Container,
+  Typography,
+  Box,
+  Card,
+  CardContent,
+  TextField,
+  Button,
+  Stack,
+  Alert,
+  Divider,
+  Paper,
+  Modal,
+  IconButton
+} from "@mui/material";
+import {
+  Edit as EditIcon,
+  Close as CloseIcon,
+  Download as DownloadIcon,
+  Upload as UploadIcon,
+  Visibility as VisitIcon,
+  Person as PersonIcon,
+  CalendarToday as CalendarIcon
+} from "@mui/icons-material";
 
-interface IrisImage {
+interface Visit {
   id: number;
-  image: string;
-  description: string;
+  patient: number;
+  visit_date: string;
+  diagnosis: string;
+  notes: string;
+  document?: string;
   created_at: string;
+  updated_at: string;
+}
+
+interface Patient {
+  id: number;
+  first_name: string;
+  last_name: string;
 }
 
 export default function VisitDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [images, setImages] = useState<IrisImage[]>([]);
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [description, setDescription] = useState("");
+  const [visit, setVisit] = useState<Visit | null>(null);
+  const [patient, setPatient] = useState<Patient | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [uploading, setUploading] = useState(false);
+  
+  // Edit states
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editDiagnosis, setEditDiagnosis] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editDocument, setEditDocument] = useState<File | null>(null);
+  const [updating, setUpdating] = useState(false);
+  
   const router = useRouter();
 
   useEffect(() => {
-    const fetchImages = async () => {
+    const fetchVisit = async () => {
       const token = localStorage.getItem("access_token");
       if (!token) {
         router.push("/login");
         return;
       }
       try {
-        const res = await fetch(`${API_URL}/api/visits/${id}/images/`, {
+        const res = await fetch(`${API_URL}/api/visits/${id}/`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.status === 401) {
@@ -36,114 +78,350 @@ export default function VisitDetailPage() {
           return;
         }
         if (!res.ok) {
-          setError("Görseller alınamadı.");
+          setError("Ziyaret bilgileri alınamadı.");
+          setLoading(false);
           return;
         }
-        const data = await res.json();
-        setImages(data);
+        const visitData = await res.json();
+        setVisit(visitData);
+        
+        // Fetch patient info
+        const patientRes = await fetch(`${API_URL}/api/patients/${visitData.patient}/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (patientRes.ok) {
+          const patientData = await patientRes.json();
+          setPatient(patientData);
+        }
+        
+        setLoading(false);
       } catch {
-        setError("Görseller alınamadı.");
+        setError("Ziyaret bilgileri alınamadı.");
+        setLoading(false);
       }
     };
-    fetchImages();
+    fetchVisit();
   }, [id, router]);
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0] || null;
-    setFile(selected);
-    if (selected) {
-      const reader = new FileReader();
-      reader.onloadend = () => setPreview(reader.result as string);
-      reader.readAsDataURL(selected);
-    } else {
-      setPreview(null);
+  const handleEditVisit = () => {
+    if (visit) {
+      setEditDiagnosis(visit.diagnosis);
+      setEditNotes(visit.notes || "");
+      setEditDocument(null);
+      setEditModalOpen(true);
     }
   };
 
-  const handleUpload = async (e: FormEvent) => {
+  const handleUpdateVisit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) return;
-    setUploading(true);
+    setUpdating(true);
     setError("");
     const token = localStorage.getItem("access_token");
     if (!token) {
       router.push("/login");
       return;
     }
-    const formData = new FormData();
-    formData.append("image", file);
-    formData.append("description", description);
+    
     try {
-      const res = await fetch(`${API_URL}/api/visits/${id}/add_iris_image/`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+      const formData = new FormData();
+      formData.append('diagnosis', editDiagnosis);
+      formData.append('notes', editNotes);
+      if (editDocument) {
+        formData.append('document', editDocument);
+      }
+
+      const res = await fetch(`${API_URL}/api/visits/${id}/`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
         body: formData,
       });
+      
       if (!res.ok) {
-        setError("Görsel yüklenemedi.");
-        setUploading(false);
+        setError("Ziyaret güncellenemedi.");
+        setUpdating(false);
         return;
       }
-      setFile(null);
-      setPreview(null);
-      setDescription("");
-      // Refresh images
-      const refreshed = await fetch(`${API_URL}/api/visits/${id}/images/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setImages(await refreshed.json());
-      setUploading(false);
+      
+      const updatedVisit = await res.json();
+      setVisit(updatedVisit);
+      setEditModalOpen(false);
+      setUpdating(false);
     } catch {
-      setError("Görsel yüklenemedi.");
-      setUploading(false);
+      setError("Ziyaret güncellenemedi.");
+      setUpdating(false);
     }
   };
 
+  const formatDateTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('tr-TR', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      weekday: 'long'
+    });
+  };
+
+  if (loading) {
+    return <Loading />;
+  }
+
+  if (error) {
+    return (
+      <ClientLayout>
+        <Container maxWidth="md" sx={{ mt: 4 }}>
+          <Alert severity="error">{error}</Alert>
+        </Container>
+      </ClientLayout>
+    );
+  }
+
+  if (!visit) return null;
+
   return (
-    <div className="max-w-2xl mx-auto py-8">
-      <h1 className="text-2xl font-bold mb-4">İris Görselleri</h1>
-      <form onSubmit={handleUpload} className="mb-8 bg-white p-4 rounded shadow space-y-3">
-        <div>
-          <label className="block mb-1 font-medium">Görsel Seç</label>
-          <input type="file" accept="image/*" onChange={handleFileChange} />
-        </div>
-        {preview && (
-          <div className="mb-2">
-            <img src={preview} alt="Önizleme" className="max-h-48 rounded border" />
-          </div>
-        )}
-        <div>
-          <label className="block mb-1 font-medium">Açıklama</label>
-          <input
-            type="text"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="w-full border px-3 py-2 rounded"
-          />
-        </div>
-        {error && <div className="text-red-500 text-sm">{error}</div>}
-        <button
-          type="submit"
-          className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 transition"
-          disabled={uploading}
+    <ClientLayout>
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        {/* Header */}
+        <Paper elevation={2} sx={{ p: 4, mb: 4, borderRadius: 3 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" mb={3}>
+            <Box>
+              <Typography variant="h4" fontWeight="bold" color="primary" gutterBottom>
+                <VisitIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                Ziyaret Detayları
+              </Typography>
+              {patient && (
+                <Typography variant="h6" color="text.secondary">
+                  <PersonIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                  {patient.first_name} {patient.last_name}
+                </Typography>
+              )}
+            </Box>
+            <Stack direction="row" spacing={2}>
+              <Button
+                variant="outlined"
+                onClick={() => router.back()}
+              >
+                Geri Dön
+              </Button>
+              <IconButton
+                onClick={handleEditVisit}
+                sx={{
+                  bgcolor: 'primary.main',
+                  color: 'white',
+                  '&:hover': {
+                    bgcolor: 'primary.dark',
+                  },
+                  width: 48,
+                  height: 48
+                }}
+              >
+                <EditIcon />
+              </IconButton>
+            </Stack>
+          </Stack>
+
+          <Stack spacing={3}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <CalendarIcon color="action" />
+              <Typography variant="h6">
+                <strong>Ziyaret Tarihi:</strong> {formatDateTime(visit.visit_date)}
+              </Typography>
+            </Box>
+          </Stack>
+        </Paper>
+
+        {/* Visit Details */}
+        <Stack spacing={4}>
+          <Card elevation={2} sx={{ borderRadius: 3 }}>
+            <CardContent sx={{ p: 3 }}>
+              <Typography variant="h5" fontWeight="600" color="primary" gutterBottom>
+                🩺 Tanı ve Bulgular
+              </Typography>
+              <Divider sx={{ mb: 3 }} />
+              <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                {visit.diagnosis}
+              </Typography>
+            </CardContent>
+          </Card>
+
+          {visit.notes && (
+            <Card elevation={2} sx={{ borderRadius: 3 }}>
+              <CardContent sx={{ p: 3 }}>
+                <Typography variant="h5" fontWeight="600" color="primary" gutterBottom>
+                  📝 Ziyaret Notları
+                </Typography>
+                <Divider sx={{ mb: 3 }} />
+                <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                  {visit.notes}
+                </Typography>
+              </CardContent>
+            </Card>
+          )}
+
+          {visit.document && (
+            <Card elevation={2} sx={{ borderRadius: 3 }}>
+              <CardContent sx={{ p: 3 }}>
+                <Typography variant="h5" fontWeight="600" color="primary" gutterBottom>
+                  📎 Ekli Doküman
+                </Typography>
+                <Divider sx={{ mb: 3 }} />
+                <Button
+                  variant="contained"
+                  startIcon={<DownloadIcon />}
+                  href={`${API_URL}${visit.document}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  sx={{ 
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%)',
+                    }
+                  }}
+                >
+                  Dokümanı İndir
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </Stack>
+
+        {/* Edit Modal */}
+        <Modal
+          open={editModalOpen}
+          onClose={() => setEditModalOpen(false)}
+          aria-labelledby="edit-visit-modal"
         >
-          {uploading ? "Yükleniyor..." : "Görsel Yükle"}
-        </button>
-      </form>
-      <h2 className="text-xl font-semibold mb-2">Yüklenen Görseller</h2>
-      <div className="grid grid-cols-2 gap-4">
-        {images.map((img) => (
-          <div key={img.id} className="bg-gray-50 p-2 rounded shadow">
-            <img
-              src={`${API_URL}${img.image}`}
-              alt={img.description || "İris görseli"}
-              className="w-full h-32 object-cover rounded mb-2"
-            />
-            <div className="text-gray-700 text-sm">{img.description}</div>
-            <div className="text-gray-400 text-xs">{new Date(img.created_at).toLocaleString()}</div>
-          </div>
-        ))}
-      </div>
-    </div>
+          <Box
+            sx={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: { xs: '90%', sm: '80%', md: '70%' },
+              maxWidth: 600,
+              maxHeight: '90vh',
+              overflow: 'auto',
+              bgcolor: 'background.paper',
+              borderRadius: 3,
+              boxShadow: 24,
+              p: 0,
+            }}
+          >
+            <Paper
+              sx={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: 'white',
+                p: 3,
+                borderRadius: '12px 12px 0 0',
+                position: 'relative'
+              }}
+            >
+              <Typography variant="h5" fontWeight="600">
+                <EditIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                Ziyaret Düzenle
+              </Typography>
+              <IconButton
+                onClick={() => setEditModalOpen(false)}
+                sx={{
+                  position: 'absolute',
+                  right: 8,
+                  top: 8,
+                  color: 'white',
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' }
+                }}
+              >
+                <CloseIcon />
+              </IconButton>
+            </Paper>
+
+            <Box component="form" onSubmit={handleUpdateVisit} sx={{ p: 4 }}>
+              <Stack spacing={3}>
+                <TextField
+                  fullWidth
+                  label="Tanı"
+                  multiline
+                  rows={4}
+                  value={editDiagnosis}
+                  onChange={(e) => setEditDiagnosis(e.target.value)}
+                  required
+                  placeholder="Hastanın tanısını güncelleyin..."
+                />
+                
+                <TextField
+                  fullWidth
+                  label="Ziyaret Notları"
+                  multiline
+                  rows={3}
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  placeholder="Ek notları güncelleyin..."
+                />
+
+                <Box>
+                  <Typography variant="body2" fontWeight="600" mb={1}>
+                    📎 Doküman Güncelle (Opsiyonel)
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    component="label"
+                    fullWidth
+                    startIcon={<UploadIcon />}
+                    sx={{ 
+                      py: 2,
+                      borderStyle: 'dashed',
+                      '&:hover': { borderStyle: 'dashed' }
+                    }}
+                  >
+                    {editDocument ? `📄 ${editDocument.name}` : '📁 Yeni Dosya Seç'}
+                    <input
+                      type="file"
+                      hidden
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.txt"
+                      onChange={(e) => setEditDocument(e.target.files?.[0] || null)}
+                    />
+                  </Button>
+                  {editDocument && (
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                      Yeni dosya: {editDocument.name} ({(editDocument.size / 1024).toFixed(1)} KB)
+                    </Typography>
+                  )}
+                </Box>
+
+                {error && (
+                  <Alert severity="error">{error}</Alert>
+                )}
+
+                <Stack direction="row" spacing={2} justifyContent="flex-end">
+                  <Button
+                    variant="outlined"
+                    onClick={() => setEditModalOpen(false)}
+                    disabled={updating}
+                  >
+                    İptal
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    disabled={updating}
+                    sx={{
+                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      '&:hover': {
+                        background: 'linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%)',
+                      }
+                    }}
+                  >
+                    {updating ? "Güncelleniyor..." : "Güncelle"}
+                  </Button>
+                </Stack>
+              </Stack>
+            </Box>
+          </Box>
+        </Modal>
+      </Container>
+    </ClientLayout>
   );
 } 

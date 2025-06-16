@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ClientLayout from "../../components/ClientLayout";
 import Loading from "../../components/Loading";
+import ConfirmDialog from "../../components/ConfirmDialog";
 import {
   Container,
   Typography,
@@ -34,7 +35,8 @@ import {
   Add as AddIcon,
   Visibility as VisitIcon,
   Edit as EditIcon,
-  Close as CloseIcon
+  Close as CloseIcon,
+  Delete as DeleteIcon
 } from "@mui/icons-material";
 import API_URL from "../../../config/api";
 
@@ -43,15 +45,21 @@ interface Visit {
   visit_date: string;
   diagnosis: string;
   notes: string;
+  document?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface Patient {
   id: number;
+  patient_code: string;
   first_name: string;
   last_name: string;
   birth_date: string;
   gender: string;
-  contact_info: string;
+  phone: string;
+  email: string;
+  tc_no: string;
   city: string;
   district: string;
   address: string;
@@ -66,18 +74,26 @@ export default function PatientDetailPage() {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [visitDate, setVisitDate] = useState("");
+  const [visitDate, setVisitDate] = useState(() => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  });
   const [diagnosis, setDiagnosis] = useState("");
   const [notes, setNotes] = useState("");
   const [adding, setAdding] = useState(false);
+  const [visitSuccess, setVisitSuccess] = useState(false);
   
   // Edit patient states
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editPatientCode, setEditPatientCode] = useState("");
   const [editFirstName, setEditFirstName] = useState("");
   const [editLastName, setEditLastName] = useState("");
   const [editBirthDate, setEditBirthDate] = useState("");
   const [editGender, setEditGender] = useState("");
-  const [editContactInfo, setEditContactInfo] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editTcNo, setEditTcNo] = useState("");
   const [editCity, setEditCity] = useState("");
   const [editDistrict, setEditDistrict] = useState("");
   const [editAddress, setEditAddress] = useState("");
@@ -85,6 +101,10 @@ export default function PatientDetailPage() {
   const [editAllergies, setEditAllergies] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [updating, setUpdating] = useState(false);
+  
+  // Confirm dialog states
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [visitToDelete, setVisitToDelete] = useState<number | null>(null);
   
   const router = useRouter();
 
@@ -136,8 +156,8 @@ export default function PatientDetailPage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          patient: id,
-          visit_date: visitDate,
+          patient: parseInt(id),
+          visit_date: new Date(visitDate).toISOString(),
           diagnosis,
           notes,
         }),
@@ -147,9 +167,15 @@ export default function PatientDetailPage() {
         setAdding(false);
         return;
       }
-      setVisitDate("");
+      // Reset form with current date/time
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      setVisitDate(now.toISOString().slice(0, 16));
       setDiagnosis("");
       setNotes("");
+      // Show success message
+      setVisitSuccess(true);
+      setTimeout(() => setVisitSuccess(false), 3000);
       // Refresh patient data
       const updated = await fetch(`${API_URL}/api/patients/${id}/`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -164,11 +190,14 @@ export default function PatientDetailPage() {
 
   const handleEditPatient = () => {
     if (patient) {
+      setEditPatientCode(patient.patient_code || "");
       setEditFirstName(patient.first_name);
       setEditLastName(patient.last_name);
       setEditBirthDate(patient.birth_date);
       setEditGender(patient.gender);
-      setEditContactInfo(patient.contact_info);
+      setEditPhone(patient.phone || "");
+      setEditEmail(patient.email || "");
+      setEditTcNo(patient.tc_no || "");
       setEditCity(patient.city || "");
       setEditDistrict(patient.district || "");
       setEditAddress(patient.address || "");
@@ -196,11 +225,14 @@ export default function PatientDetailPage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
+          patient_code: editPatientCode,
           first_name: editFirstName,
           last_name: editLastName,
           birth_date: editBirthDate,
           gender: editGender,
-          contact_info: editContactInfo,
+          phone: editPhone,
+          email: editEmail,
+          tc_no: editTcNo,
           city: editCity,
           district: editDistrict,
           address: editAddress,
@@ -224,6 +256,55 @@ export default function PatientDetailPage() {
     }
   };
 
+  const handleDeleteVisit = (visitId: number) => {
+    setVisitToDelete(visitId);
+    setConfirmDialogOpen(true);
+  };
+
+  const confirmDeleteVisit = async () => {
+    if (!visitToDelete) return;
+
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      router.push("/login");
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/api/visits/${visitToDelete}/`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        setError("Ziyaret silinemedi.");
+        setConfirmDialogOpen(false);
+        setVisitToDelete(null);
+        return;
+      }
+
+      // Refresh patient data
+      const updated = await fetch(`${API_URL}/api/patients/${id}/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (updated.ok) {
+        setPatient(await updated.json());
+      }
+    } catch {
+      setError("Ziyaret silinemedi.");
+    }
+
+    setConfirmDialogOpen(false);
+    setVisitToDelete(null);
+  };
+
+  const cancelDeleteVisit = () => {
+    setConfirmDialogOpen(false);
+    setVisitToDelete(null);
+  };
+
   const getGenderText = (gender: string) => {
     switch (gender) {
       case 'M': return 'Erkek';
@@ -234,7 +315,15 @@ export default function PatientDetailPage() {
   };
 
   const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString('tr-TR');
+    const date = new Date(dateString);
+    return date.toLocaleString('tr-TR', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      weekday: 'long'
+    });
   };
 
   if (loading) {
@@ -275,6 +364,11 @@ export default function PatientDetailPage() {
                 <Typography variant="h3" fontWeight="bold" color="primary">
                   {patient.first_name} {patient.last_name}
                 </Typography>
+                {patient.patient_code && (
+                  <Typography variant="h6" color="text.secondary" sx={{ mt: 0.5 }}>
+                    Kod: {patient.patient_code}
+                  </Typography>
+                )}
                 <Stack direction="row" spacing={1} mt={1}>
                   <Chip
                     label={getGenderText(patient.gender)}
@@ -317,12 +411,22 @@ export default function PatientDetailPage() {
                   <strong>Doğum Tarihi:</strong> {patient.birth_date}
                 </Typography>
               </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <PhoneIcon color="action" />
-                <Typography variant="body1">
-                  <strong>İletişim:</strong> {patient.contact_info}
-                </Typography>
-              </Box>
+              {(patient.phone || patient.email) && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <PhoneIcon color="action" />
+                  <Typography variant="body1">
+                    <strong>İletişim:</strong> {[patient.phone, patient.email].filter(Boolean).join(' • ')}
+                  </Typography>
+                </Box>
+              )}
+              {patient.tc_no && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <PersonIcon color="action" />
+                  <Typography variant="body1">
+                    <strong>TC:</strong> {patient.tc_no}
+                  </Typography>
+                </Box>
+              )}
               {(patient.city || patient.district || patient.address) && (
                 <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
                   <LocationIcon color="action" />
@@ -401,7 +505,8 @@ export default function PatientDetailPage() {
                       value={diagnosis}
                       onChange={(e) => setDiagnosis(e.target.value)}
                       required
-                      placeholder="Hasta tanısını yazın..."
+                      placeholder="Örn: Migren, baş ağrısı, stres kaynaklı..."
+                      helperText="Hastanın şikayetlerini ve tanısını detaylı yazın"
                     />
                     
                     <TextField
@@ -411,11 +516,17 @@ export default function PatientDetailPage() {
                       rows={3}
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
-                      placeholder="Ek notlar (opsiyonel)"
+                      placeholder="Örn: Hasta genel durumu iyi, önerilen tedaviye uyum sağlıyor..."
+                      helperText="Ziyaret sırasındaki gözlemler, öneriler ve ek bilgiler"
                     />
-                    
+
+
                     {error && (
                       <Alert severity="error">{error}</Alert>
+                    )}
+                    
+                    {visitSuccess && (
+                      <Alert severity="success">Ziyaret başarıyla eklendi!</Alert>
                     )}
                     
                     <Button
@@ -462,16 +573,53 @@ export default function PatientDetailPage() {
                     {patient.visits.map((visit) => (
                       <Card key={visit.id} variant="outlined" sx={{ borderRadius: 2 }}>
                         <CardContent sx={{ p: 2 }}>
-                          <Typography variant="h6" fontWeight="600" color="primary" gutterBottom>
-                            {formatDateTime(visit.visit_date)}
-                          </Typography>
+                          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={2}>
+                            <Typography variant="h6" fontWeight="600" color="primary">
+                              {formatDateTime(visit.visit_date)}
+                            </Typography>
+                            <Stack direction="row" spacing={1}>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => router.push(`/visits/${visit.id}`)}
+                                sx={{ minWidth: 'auto', px: 2 }}
+                              >
+                                Detay
+                              </Button>
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => handleDeleteVisit(visit.id)}
+                                sx={{ 
+                                  '&:hover': { 
+                                    bgcolor: 'error.light',
+                                    color: 'white'
+                                  }
+                                }}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Stack>
+                          </Stack>
+                          
                           <Typography variant="body1" gutterBottom>
                             <strong>Tanı:</strong> {visit.diagnosis}
                           </Typography>
+                          
                           {visit.notes && (
-                            <Typography variant="body2" color="text.secondary">
+                            <Typography variant="body2" color="text.secondary" gutterBottom>
                               <strong>Notlar:</strong> {visit.notes}
                             </Typography>
+                          )}
+                          
+                          {visit.document && (
+                            <Box sx={{ mt: 1, p: 1, bgcolor: 'grey.50', borderRadius: 1 }}>
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                📎 <a href={`${API_URL}${visit.document}`} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>
+                                  Doküman İndir
+                                </a>
+                              </Typography>
+                            </Box>
                           )}
                         </CardContent>
                       </Card>
@@ -540,6 +688,15 @@ export default function PatientDetailPage() {
                     👤 Kişisel Bilgiler
                   </Typography>
                   <Stack spacing={2}>
+                    <TextField
+                      fullWidth
+                      label="Hasta Kodu"
+                      value={editPatientCode}
+                      onChange={(e) => setEditPatientCode(e.target.value)}
+                      placeholder="Örn: HST-2024-001 (opsiyonel, manuel girilir)"
+                      inputProps={{ maxLength: 30 }}
+                      helperText="Manuel hasta kodu - 30 karaktere kadar (opsiyonel)"
+                    />
                     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
                       <TextField
                         fullWidth
@@ -581,11 +738,29 @@ export default function PatientDetailPage() {
                     </Stack>
                     <TextField
                       fullWidth
-                      label="İletişim Bilgisi"
-                      value={editContactInfo}
-                      onChange={(e) => setEditContactInfo(e.target.value)}
-                      required
+                      label="TC Kimlik No"
+                      value={editTcNo}
+                      onChange={(e) => setEditTcNo(e.target.value)}
+                      placeholder="11 haneli TC kimlik numarası (opsiyonel)"
+                      inputProps={{ maxLength: 11 }}
                     />
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                      <TextField
+                        fullWidth
+                        label="Telefon"
+                        value={editPhone}
+                        onChange={(e) => setEditPhone(e.target.value)}
+                        placeholder="0555 123 45 67 (opsiyonel)"
+                      />
+                      <TextField
+                        fullWidth
+                        label="E-posta"
+                        type="email"
+                        value={editEmail}
+                        onChange={(e) => setEditEmail(e.target.value)}
+                        placeholder="ornek@email.com (opsiyonel)"
+                      />
+                    </Stack>
                   </Stack>
                 </Box>
 
@@ -708,6 +883,18 @@ export default function PatientDetailPage() {
             </Box>
           </Box>
         </Modal>
+
+        {/* Confirm Dialog */}
+        <ConfirmDialog
+          open={confirmDialogOpen}
+          title="Ziyareti Sil"
+          message="Bu ziyareti silmek istediğinizden emin misiniz? Bu işlem geri alınamaz."
+          confirmText="Sil"
+          cancelText="İptal"
+          onConfirm={confirmDeleteVisit}
+          onCancel={cancelDeleteVisit}
+          severity="error"
+        />
       </Container>
     </ClientLayout>
   );

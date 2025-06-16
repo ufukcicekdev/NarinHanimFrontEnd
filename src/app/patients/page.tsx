@@ -33,11 +33,14 @@ import API_URL from "../../config/api";
 
 interface Patient {
   id: number;
+  patient_code: string;
   first_name: string;
   last_name: string;
   birth_date: string;
   gender: string;
-  contact_info: string;
+  phone: string;
+  email: string;
+  tc_no: string;
   city: string;
   district: string;
   address: string;
@@ -65,11 +68,14 @@ export default function PatientsPage() {
   const router = useRouter();
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({
+    patient_code: "",
     first_name: "",
     last_name: "",
     birth_date: "",
     gender: "",
-    contact_info: "",
+    phone: "",
+    email: "",
+    tc_no: "",
     city: "",
     district: "",
     address: "",
@@ -116,11 +122,22 @@ export default function PatientsPage() {
     if (!search) {
       setFiltered(patients);
     } else {
-      setFiltered(
-        patients.filter((p) =>
-          `${p.first_name} ${p.last_name}`.toLowerCase().includes(search.toLowerCase())
-        )
-      );
+      const searchTerm = search.toLowerCase();
+              setFiltered(
+          patients.filter((p) => {
+            const fullName = `${p.first_name} ${p.last_name}`.toLowerCase();
+            const patientCode = (p.patient_code || '').toLowerCase();
+            const phone = (p.phone || '').toLowerCase();
+            const email = (p.email || '').toLowerCase();
+            const tcNo = (p.tc_no || '').toLowerCase();
+            
+            return fullName.includes(searchTerm) || 
+                   patientCode.includes(searchTerm) || 
+                   phone.includes(searchTerm) ||
+                   email.includes(searchTerm) ||
+                   tcNo.includes(searchTerm);
+          })
+        );
     }
   }, [search, patients]);
 
@@ -169,11 +186,14 @@ export default function PatientsPage() {
       setFiltered([newPatient, ...filtered]);
       setShowModal(false);
       setForm({
+        patient_code: "",
         first_name: "",
         last_name: "",
         birth_date: "",
         gender: "",
-        contact_info: "",
+        phone: "",
+        email: "",
+        tc_no: "",
         city: "",
         district: "",
         address: "",
@@ -266,6 +286,18 @@ export default function PatientsPage() {
                         👤 Kişisel Bilgiler
                       </Typography>
                       <Stack spacing={3}>
+                        <TextField
+                          fullWidth
+                          label="Hasta Kodu"
+                          name="patient_code"
+                          value={form.patient_code}
+                          onChange={handleFormChange}
+                          variant="outlined"
+                          placeholder="Örn: HST-2024-001 (opsiyonel, manuel girilir)"
+                          inputProps={{ maxLength: 30 }}
+                          helperText="Manuel hasta kodu - 30 karaktere kadar (opsiyonel)"
+                        />
+
                         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
                           <TextField
                             fullWidth
@@ -315,14 +347,36 @@ export default function PatientsPage() {
 
                         <TextField
                           fullWidth
-                          label="İletişim Bilgisi"
-                          name="contact_info"
-                          value={form.contact_info}
+                          label="TC Kimlik No"
+                          name="tc_no"
+                          value={form.tc_no}
                           onChange={handleFormChange}
-                          required
                           variant="outlined"
-                          placeholder="Telefon numarası veya e-posta adresi"
+                          placeholder="11 haneli TC kimlik numarası (opsiyonel)"
+                          inputProps={{ maxLength: 11 }}
                         />
+
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                          <TextField
+                            fullWidth
+                            label="Telefon"
+                            name="phone"
+                            value={form.phone}
+                            onChange={handleFormChange}
+                            variant="outlined"
+                            placeholder="0555 123 45 67 (opsiyonel)"
+                          />
+                          <TextField
+                            fullWidth
+                            label="E-posta"
+                            name="email"
+                            type="email"
+                            value={form.email}
+                            onChange={handleFormChange}
+                            variant="outlined"
+                            placeholder="ornek@email.com (opsiyonel)"
+                          />
+                        </Stack>
                       </Stack>
                     </Box>
 
@@ -480,11 +534,20 @@ export default function PatientsPage() {
             <TextField
               fullWidth
               variant="outlined"
-              placeholder="Hasta adı ile ara..."
+              placeholder="Hasta ara... (ad, kod, telefon, email, TC)"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               InputProps={{
                 startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1 }} />,
+                endAdornment: search && (
+                  <IconButton
+                    size="small"
+                    onClick={() => setSearch('')}
+                    sx={{ color: 'text.secondary' }}
+                  >
+                    <CloseIcon fontSize="small" />
+                  </IconButton>
+                ),
               }}
               sx={{
                 '& .MuiOutlinedInput-root': {
@@ -496,12 +559,64 @@ export default function PatientsPage() {
           </Box>
         </Box>
 
+        {/* Summary Info */}
+        <Box sx={{ mb: 4, p: 3, bgcolor: 'background.paper', borderRadius: 3, boxShadow: 1 }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} alignItems="center">
+            <Box sx={{ textAlign: { xs: 'center', sm: 'left' } }}>
+              <Typography variant="h4" fontWeight="bold" color="primary">
+                {patients.length}
+              </Typography>
+              <Typography variant="body1" color="text.secondary">
+                Toplam Hasta
+              </Typography>
+            </Box>
+            
+            {search && (
+              <>
+                <Box sx={{ width: { xs: '100%', sm: '1px' }, height: { xs: '1px', sm: '40px' }, bgcolor: 'divider' }} />
+                <Box sx={{ textAlign: { xs: 'center', sm: 'left' } }}>
+                  <Typography variant="h4" fontWeight="bold" color="secondary.main">
+                    {filtered.length}
+                  </Typography>
+                  <Typography variant="body1" color="text.secondary">
+                    Arama Sonucu
+                  </Typography>
+                </Box>
+              </>
+            )}
+            
+            <Box sx={{ flexGrow: 1 }} />
+            
+            <Box sx={{ textAlign: { xs: 'center', sm: 'right' } }}>
+              <Typography variant="body2" color="text.secondary">
+                💡 Hasta bulmak için arama yapın
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Ad, kod, telefon, email veya TC ile arayabilirsiniz
+              </Typography>
+            </Box>
+          </Stack>
+        </Box>
+
         {/* Patients Grid */}
-        {filtered.length === 0 ? (
+        {!search ? (
+          <Box sx={{ textAlign: 'center', mt: 8 }}>
+            <SearchIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+            <Typography variant="h6" color="text.secondary" gutterBottom>
+              Hasta aramak için yukarıdaki arama kutusunu kullanın
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Ad, soyad, hasta kodu, telefon, email veya TC kimlik numarası ile arama yapabilirsiniz
+            </Typography>
+          </Box>
+        ) : filtered.length === 0 ? (
           <Box sx={{ textAlign: 'center', mt: 8 }}>
             <PersonIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-            <Typography variant="h6" color="text.secondary">
-              Kayıtlı hasta bulunamadı.
+                         <Typography variant="h6" color="text.secondary" gutterBottom>
+               &quot;{search}&quot; için sonuç bulunamadı
+             </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Farklı bir arama terimi deneyin
             </Typography>
           </Box>
         ) : (
@@ -572,12 +687,24 @@ export default function PatientsPage() {
 
                     {/* Patient Details */}
                     <Stack spacing={1}>
+                      {patient.patient_code && (
+                        <Typography variant="body2" color="primary" sx={{ fontWeight: 600 }}>
+                          <strong>Kod:</strong> {patient.patient_code}
+                        </Typography>
+                      )}
                       <Typography variant="body2" color="text.secondary">
                         <strong>Doğum Tarihi:</strong> {patient.birth_date}
                       </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        <strong>İletişim:</strong> {patient.contact_info}
-                      </Typography>
+                      {(patient.phone || patient.email) && (
+                        <Typography variant="body2" color="text.secondary">
+                          <strong>İletişim:</strong> {[patient.phone, patient.email].filter(Boolean).join(' • ')}
+                        </Typography>
+                      )}
+                      {patient.tc_no && (
+                        <Typography variant="body2" color="text.secondary">
+                          <strong>TC:</strong> {patient.tc_no}
+                        </Typography>
+                      )}
                       {(patient.city || patient.district) && (
                         <Typography variant="body2" color="text.secondary">
                           <strong>Adres:</strong> {patient.district && `${patient.district}, `}{patient.city}
