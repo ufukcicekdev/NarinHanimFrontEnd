@@ -17,7 +17,15 @@ import {
   Divider,
   Paper,
   Modal,
-  IconButton
+  IconButton,
+  Menu,
+  MenuItem,
+  Slider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Tooltip
 } from "@mui/material";
 import {
   Edit as EditIcon,
@@ -28,7 +36,14 @@ import {
   Person as PersonIcon,
   CalendarToday as CalendarIcon,
   Add as AddIcon,
-  Timeline as TimelineIcon
+  Timeline as TimelineIcon,
+  ZoomIn as ZoomInIcon,
+  ZoomOut as ZoomOutIcon,
+  Fullscreen as FullscreenIcon,
+  Brush as BrushIcon,
+  Save as SaveIcon,
+  Undo as UndoIcon,
+  Palette as PaletteIcon
 } from "@mui/icons-material";
 
 interface StageEyeImage {
@@ -104,6 +119,8 @@ export default function VisitDetailPage() {
   const [editStageComplaint, setEditStageComplaint] = useState("");
   const [editStageNotes, setEditStageNotes] = useState("");
   const [editStageEyeImages, setEditStageEyeImages] = useState<File[]>([]);
+  const [editStageEyeImagePreviews, setEditStageEyeImagePreviews] = useState<string[]>([]);
+  const [editStageExistingImages, setEditStageExistingImages] = useState<StageEyeImage[]>([]);
   const [editStageMedicines, setEditStageMedicines] = useState<{
     id?: number;
     name: string;
@@ -114,8 +131,31 @@ export default function VisitDetailPage() {
   }[]>([]);
   const [updatingStage, setUpdatingStage] = useState(false);
   
+  // Timeline view state
+  const [timelineView, setTimelineView] = useState(false);
+  
+  // Image viewer states
+  const [imageViewerOpen, setImageViewerOpen] = useState(false);
+  const [currentImage, setCurrentImage] = useState<string>("");
+  const [currentImageId, setCurrentImageId] = useState<number | null>(null);
+  const [imageScale, setImageScale] = useState(1);
+  const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  
+  // Drawing states
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [drawingMode, setDrawingMode] = useState(false);
+  const [brushSize, setBrushSize] = useState(3);
+  const [brushColor, setBrushColor] = useState('#ff0000');
+  const [canvasRef, setCanvasRef] = useState<HTMLCanvasElement | null>(null);
+  const [hasDrawn, setHasDrawn] = useState(false);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [colorMenuAnchor, setColorMenuAnchor] = useState<null | HTMLElement>(null);
+  
   // Eye images states
   const [eyeImages, setEyeImages] = useState<File[]>([]);
+  const [eyeImagePreviews, setEyeImagePreviews] = useState<string[]>([]);
   
   // Medicine states
   const [medicines, setMedicines] = useState<{
@@ -307,7 +347,10 @@ export default function VisitDetailPage() {
       setShowAddStageModal(false);
       setNewStageComplaint("");
       setNewStageNotes("");
+      // Clean up preview URLs
+      eyeImagePreviews.forEach(url => URL.revokeObjectURL(url));
       setEyeImages([]);
+      setEyeImagePreviews([]);
       setMedicines([{ name: "", dosage: "", frequency: "", duration: "", notes: "" }]);
       setAddingStage(false);
     } catch {
@@ -318,6 +361,85 @@ export default function VisitDetailPage() {
 
   const addMedicine = () => {
     setMedicines([...medicines, { name: "", dosage: "", frequency: "", duration: "", notes: "" }]);
+  };
+
+  // Eye images helper functions
+  const handleEyeImagesChange = (files: File[]) => {
+    setEyeImages(files);
+    
+    // Create preview URLs
+    const previews = files.map(file => URL.createObjectURL(file));
+    setEyeImagePreviews(previews);
+  };
+
+  const removeEyeImage = (index: number) => {
+    const newImages = eyeImages.filter((_, i) => i !== index);
+    const newPreviews = eyeImagePreviews.filter((_, i) => i !== index);
+    
+    // Revoke the URL to prevent memory leaks
+    URL.revokeObjectURL(eyeImagePreviews[index]);
+    
+    setEyeImages(newImages);
+    setEyeImagePreviews(newPreviews);
+  };
+
+  const addMoreEyeImages = (newFiles: File[]) => {
+    const combinedFiles = [...eyeImages, ...newFiles];
+    const newPreviews = newFiles.map(file => URL.createObjectURL(file));
+    const combinedPreviews = [...eyeImagePreviews, ...newPreviews];
+    
+    setEyeImages(combinedFiles);
+    setEyeImagePreviews(combinedPreviews);
+  };
+
+  // Edit stage eye images helper functions
+  const handleEditStageEyeImagesChange = (files: File[]) => {
+    setEditStageEyeImages(files);
+    
+    // Create preview URLs
+    const previews = files.map(file => URL.createObjectURL(file));
+    setEditStageEyeImagePreviews(previews);
+  };
+
+  const removeEditStageEyeImage = (index: number) => {
+    const newImages = editStageEyeImages.filter((_, i) => i !== index);
+    const newPreviews = editStageEyeImagePreviews.filter((_, i) => i !== index);
+    
+    // Revoke the URL to prevent memory leaks
+    URL.revokeObjectURL(editStageEyeImagePreviews[index]);
+    
+    setEditStageEyeImages(newImages);
+    setEditStageEyeImagePreviews(newPreviews);
+  };
+
+  const addMoreEditStageEyeImages = (newFiles: File[]) => {
+    const combinedFiles = [...editStageEyeImages, ...newFiles];
+    const newPreviews = newFiles.map(file => URL.createObjectURL(file));
+    const combinedPreviews = [...editStageEyeImagePreviews, ...newPreviews];
+    
+    setEditStageEyeImages(combinedFiles);
+    setEditStageEyeImagePreviews(combinedPreviews);
+  };
+
+  const removeExistingEyeImage = async (imageId: number) => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+
+    try {
+      const res = await fetch(`${API_URL}/api/stage-eye-images/${imageId}/`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.ok) {
+        // Remove from state
+        setEditStageExistingImages(editStageExistingImages.filter(img => img.id !== imageId));
+      }
+    } catch (error) {
+      console.error('Error deleting image:', error);
+    }
   };
 
   const removeMedicine = (index: number) => {
@@ -337,6 +459,8 @@ export default function VisitDetailPage() {
     setEditStageComplaint(stage.complaint);
     setEditStageNotes(stage.notes);
     setEditStageEyeImages([]);
+    setEditStageEyeImagePreviews([]);
+    setEditStageExistingImages(stage.eye_images || []);
     setEditStageMedicines(stage.medicines.map(med => ({
       id: med.id,
       name: med.name,
@@ -477,6 +601,336 @@ export default function VisitDetailPage() {
       weekday: 'long'
     });
   };
+
+  // Image viewer functions
+  const openImageViewer = (imageUrl: string, imageId?: number) => {
+    setCurrentImage(imageUrl);
+    setCurrentImageId(imageId || null);
+    setImageScale(1);
+    setImagePosition({ x: 0, y: 0 });
+    setDrawingMode(false);
+    setHasDrawn(false);
+    setImageViewerOpen(true);
+  };
+
+  const closeImageViewer = () => {
+    if (hasDrawn) {
+      setSaveDialogOpen(true);
+    } else {
+      setImageViewerOpen(false);
+      resetImageViewer();
+    }
+  };
+
+  const resetImageViewer = () => {
+    setCurrentImage("");
+    setCurrentImageId(null);
+    setImageScale(1);
+    setImagePosition({ x: 0, y: 0 });
+    setDrawingMode(false);
+    setHasDrawn(false);
+    setCanvasRef(null);
+  };
+
+  const zoomIn = () => {
+    setImageScale(prev => Math.min(prev + 0.5, 3));
+  };
+
+  const zoomOut = () => {
+    setImageScale(prev => Math.max(prev - 0.5, 0.5));
+  };
+
+  const resetZoom = () => {
+    setImageScale(1);
+    setImagePosition({ x: 0, y: 0 });
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (imageScale > 1) {
+      setIsDragging(true);
+      setDragStart({ x: e.clientX - imagePosition.x, y: e.clientY - imagePosition.y });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging && imageScale > 1) {
+      setImagePosition({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    if (!drawingMode) {
+      if (e.deltaY < 0) {
+        zoomIn();
+      } else {
+        zoomOut();
+      }
+    }
+  };
+
+  // Drawing functions
+  const toggleDrawingMode = () => {
+    setDrawingMode(!drawingMode);
+    if (!drawingMode) {
+      // Entering drawing mode - disable zoom and pan
+      setImageScale(1);
+      setImagePosition({ x: 0, y: 0 });
+      // Canvas will be initialized when image loads and canvas ref is set
+    }
+  };
+
+  // Initialize canvas when it's created and we have an image
+  const initializeCanvas = (canvas: HTMLCanvasElement, img: HTMLImageElement, shouldClear: boolean = false) => {
+    if (!canvas || !img) {
+      console.log('Cannot initialize canvas:', { canvas, img });
+      return;
+    }
+    
+    console.log('initializeCanvas called with shouldClear:', shouldClear);
+    console.log('Initializing canvas with image:', {
+      imgWidth: img.offsetWidth,
+      imgHeight: img.offsetHeight,
+      naturalWidth: img.naturalWidth,
+      naturalHeight: img.naturalHeight
+    });
+    
+    // Check if canvas dimensions need to change (this clears the canvas!)
+    const needsResize = canvas.width !== img.offsetWidth || canvas.height !== img.offsetHeight;
+    console.log('Canvas needs resize:', needsResize, {
+      currentWidth: canvas.width,
+      newWidth: img.offsetWidth,
+      currentHeight: canvas.height,
+      newHeight: img.offsetHeight
+    });
+    
+    // Only set dimensions if they actually changed (since this clears the canvas)
+    if (needsResize || shouldClear) {
+      console.log('Resizing canvas - this will clear existing drawings!');
+      canvas.width = img.offsetWidth;
+      canvas.height = img.offsetHeight;
+      canvas.style.width = img.offsetWidth + 'px';
+      canvas.style.height = img.offsetHeight + 'px';
+      
+      console.log('Canvas resized:', {
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+        styleWidth: canvas.style.width,
+        styleHeight: canvas.style.height
+      });
+    } else {
+      console.log('Canvas dimensions unchanged - preserving existing drawings');
+    }
+    
+    // Additional clear if requested
+    if (shouldClear && !needsResize) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        console.log('Canvas explicitly cleared');
+      }
+    }
+    
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      console.log('Canvas context ready');
+    } else {
+      console.log('Failed to get canvas context');
+    }
+  };
+
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!drawingMode || !canvasRef) {
+      console.log('Cannot start drawing:', { drawingMode, canvasRef });
+      return;
+    }
+    
+    setIsDrawing(true);
+    const rect = canvasRef.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    console.log('Starting drawing at:', { x, y, brushColor, brushSize });
+    
+    const ctx = canvasRef.getContext('2d');
+    if (ctx) {
+      // Set up drawing properties
+      ctx.strokeStyle = brushColor;
+      ctx.lineWidth = brushSize;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.globalCompositeOperation = 'source-over';
+      
+      // Start a new path and move to starting position
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      
+      console.log('Drawing setup complete:', { 
+        strokeStyle: ctx.strokeStyle, 
+        lineWidth: ctx.lineWidth
+      });
+    }
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDrawing || !drawingMode || !canvasRef) return;
+    
+    const rect = canvasRef.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    const ctx = canvasRef.getContext('2d');
+    if (ctx) {
+      console.log('Before drawing - canvas data exists:', ctx.getImageData(0, 0, 10, 10).data.some(d => d > 0));
+      
+      // Make sure drawing properties are maintained
+      ctx.strokeStyle = brushColor;
+      ctx.lineWidth = brushSize;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      
+      // Add line to current path and stroke it
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      
+      console.log('After drawing - canvas data exists:', ctx.getImageData(0, 0, 10, 10).data.some(d => d > 0));
+      console.log('Drawing line to:', { x, y, color: ctx.strokeStyle, size: ctx.lineWidth });
+      
+      setHasDrawn(true);
+    }
+  };
+
+  const stopDrawing = () => {
+    console.log('Stopping drawing, isDrawing was:', isDrawing);
+    setIsDrawing(false);
+  };
+
+  const clearDrawing = () => {
+    console.log('clearDrawing called - this will remove all drawings!');
+    if (!canvasRef) return;
+    const ctx = canvasRef.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, canvasRef.width, canvasRef.height);
+      setHasDrawn(false);
+      console.log('Canvas cleared');
+    }
+  };
+
+  const saveAnnotatedImage = async () => {
+    if (!canvasRef || !currentImageId || !currentImage) return;
+
+    try {
+      // Create a new canvas for compositing
+      const compositeCanvas = document.createElement('canvas');
+      const compositeCtx = compositeCanvas.getContext('2d');
+      if (!compositeCtx) return;
+
+      // Set canvas size to match original
+      compositeCanvas.width = canvasRef.width;
+      compositeCanvas.height = canvasRef.height;
+
+      // First, draw the original image
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = async () => {
+        // Draw original image to composite canvas
+        compositeCtx.drawImage(img, 0, 0, compositeCanvas.width, compositeCanvas.height);
+        
+        // Then draw the annotations on top
+        compositeCtx.drawImage(canvasRef, 0, 0);
+        
+        console.log('Composite image created with both original image and annotations');
+
+        // Convert composite canvas to blob
+        const blob = await new Promise<Blob>((resolve) => {
+          compositeCanvas.toBlob((blob) => {
+            resolve(blob!);
+          }, 'image/png');
+        });
+
+        // Create form data
+        const formData = new FormData();
+        formData.append('image', blob, 'annotated_image.png');
+        formData.append('description', 'İşaretlenmiş göz fotoğrafı');
+
+        const token = localStorage.getItem("access_token");
+        if (!token) return;
+
+        // Delete old image
+        await fetch(`${API_URL}/api/stage-eye-images/${currentImageId}/`, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        // Upload new annotated image
+        const stageId = stages.find(stage => 
+          stage.eye_images.some(img => img.id === currentImageId)
+        )?.id;
+
+        if (stageId) {
+          formData.append('stage', stageId.toString());
+          
+          await fetch(`${API_URL}/api/stage-eye-images/`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            body: formData,
+          });
+
+          // Refresh stages
+          const visitRes = await fetch(`${API_URL}/api/visits/${id}/`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (visitRes.ok) {
+            const visitData = await visitRes.json();
+            setStages(visitData.stages || []);
+          }
+        }
+
+        setSaveDialogOpen(false);
+        setImageViewerOpen(false);
+        resetImageViewer();
+      };
+
+      img.onerror = () => {
+        console.error('Failed to load original image for compositing');
+      };
+
+      // Load the original image
+      img.src = currentImage;
+      
+    } catch (error) {
+      console.error('Error saving annotated image:', error);
+    }
+  };
+
+  const discardChanges = () => {
+    setSaveDialogOpen(false);
+    setImageViewerOpen(false);
+    resetImageViewer();
+  };
+
+  // Initialize canvas when drawing mode is enabled
+  useEffect(() => {
+    if (drawingMode && canvasRef && currentImage) {
+      // Find the image element
+      const img = canvasRef.previousElementSibling as HTMLImageElement;
+      if (img && img.complete) {
+        // Only clear canvas when first entering drawing mode
+        initializeCanvas(canvasRef, img, true);
+      }
+    }
+  }, [drawingMode, currentImage]); // Removed canvasRef, brushColor, brushSize dependencies
 
   if (loading) {
     return <Loading />;
@@ -673,9 +1127,14 @@ export default function VisitDetailPage() {
                     variant="outlined"
                     size="small"
                     startIcon={<TimelineIcon />}
-                    sx={{ borderRadius: 2 }}
+                    onClick={() => setTimelineView(!timelineView)}
+                    sx={{ 
+                      borderRadius: 2,
+                      bgcolor: timelineView ? 'primary.light' : 'transparent',
+                      color: timelineView ? 'primary.dark' : 'primary.main'
+                    }}
                   >
-                    Timeline Görünümü
+                    {timelineView ? 'Kart Görünümü' : 'Timeline Görünümü'}
                   </Button>
                   <Button
                     variant="contained"
@@ -782,7 +1241,311 @@ export default function VisitDetailPage() {
                   İlk Etabı Ekle
                 </Button>
               </Box>
+            ) : timelineView ? (
+              // Timeline View
+              <Box sx={{ position: 'relative', pl: 4 }}>
+                {/* Timeline Line */}
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    left: 20,
+                    top: 0,
+                    bottom: 0,
+                    width: 2,
+                    bgcolor: 'primary.light'
+                  }}
+                />
+                
+                {stages.map((stage) => {
+                  const stageDate = new Date(stage.date);
+                  const isToday = new Date().toDateString() === stageDate.toDateString();
+                  
+                  return (
+                    <Box key={stage.id} sx={{ position: 'relative', mb: 4 }}>
+                      {/* Timeline Node */}
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          left: -32,
+                          top: 16,
+                          width: 16,
+                          height: 16,
+                          borderRadius: '50%',
+                          bgcolor: isToday ? 'success.main' : 'primary.main',
+                          border: '3px solid white',
+                          boxShadow: 2,
+                          zIndex: 1
+                        }}
+                      />
+                      
+                      {/* Date Badge */}
+                      <Box sx={{ mb: 2 }}>
+                        <Box
+                          sx={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            bgcolor: isToday ? 'success.light' : 'grey.100',
+                            color: isToday ? 'success.dark' : 'text.secondary',
+                            px: 2,
+                            py: 0.5,
+                            borderRadius: 2,
+                            fontSize: '0.875rem',
+                            fontWeight: 600
+                          }}
+                        >
+                          📅 {stageDate.toLocaleDateString('tr-TR', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            weekday: 'short'
+                          })} - {stageDate.toLocaleTimeString('tr-TR', {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                          {isToday && <Box component="span" sx={{ ml: 1 }}>🟢</Box>}
+                        </Box>
+                      </Box>
+                      
+                      {/* Timeline Card */}
+                      <Card
+                        sx={{
+                          borderRadius: 3,
+                          border: '1px solid',
+                          borderColor: isToday ? 'success.main' : 'divider',
+                          transition: 'all 0.2s',
+                          '&:hover': {
+                            borderColor: 'primary.main',
+                            boxShadow: 2,
+                            transform: 'translateX(4px)'
+                          }
+                        }}
+                      >
+                        <CardContent sx={{ p: 3 }}>
+                          {/* Stage Header */}
+                          <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
+                            <Stack direction="row" alignItems="center" spacing={2}>
+                              <Box
+                                sx={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: '50%',
+                                  bgcolor: 'primary.main',
+                                  color: 'white',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontWeight: 600,
+                                  fontSize: '0.875rem'
+                                }}
+                              >
+                                {stage.stage_number}
+                              </Box>
+                              <Typography variant="h6" fontWeight="600" color="primary">
+                                Etap {stage.stage_number}
+                              </Typography>
+                            </Stack>
+                            
+                            <Stack direction="row" spacing={1}>
+                              {stage.medicines.length > 0 && (
+                                <Box
+                                  sx={{
+                                    bgcolor: 'success.light',
+                                    color: 'success.dark',
+                                    px: 1.5,
+                                    py: 0.5,
+                                    borderRadius: 1,
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600
+                                  }}
+                                >
+                                  💊 {stage.medicines.length}
+                                </Box>
+                              )}
+                              {stage.eye_images.length > 0 && (
+                                <Box
+                                  sx={{
+                                    bgcolor: 'info.light',
+                                    color: 'info.dark',
+                                    px: 1.5,
+                                    py: 0.5,
+                                    borderRadius: 1,
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600
+                                  }}
+                                >
+                                  📷 {stage.eye_images.length}
+                                </Box>
+                              )}
+                              <IconButton
+                                size="small"
+                                onClick={() => handleEditStage(stage)}
+                                sx={{
+                                  bgcolor: 'primary.light',
+                                  color: 'primary.dark',
+                                  '&:hover': {
+                                    bgcolor: 'primary.main',
+                                    color: 'white'
+                                  },
+                                  width: 28,
+                                  height: 28
+                                }}
+                              >
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Stack>
+                          </Stack>
+                          
+                          {/* Compact Content */}
+                          <Stack spacing={2}>
+                            {/* Complaint - Always show */}
+                            <Box>
+                              <Typography variant="body2" fontWeight="600" color="warning.dark" gutterBottom>
+                                🗣️ Şikayet
+                              </Typography>
+                              <Typography 
+                                variant="body2" 
+                                sx={{ 
+                                  bgcolor: 'warning.light',
+                                  color: 'warning.dark',
+                                  p: 1.5,
+                                  borderRadius: 1,
+                                  borderLeft: '3px solid',
+                                  borderLeftColor: 'warning.main'
+                                }}
+                              >
+                                {stage.complaint}
+                              </Typography>
+                            </Box>
+                            
+                            {/* Notes - If exists */}
+                            {stage.notes && (
+                              <Box>
+                                <Typography variant="body2" fontWeight="600" color="info.dark" gutterBottom>
+                                  📝 Notlar
+                                </Typography>
+                                <Typography 
+                                  variant="body2"
+                                  sx={{ 
+                                    bgcolor: 'info.light',
+                                    color: 'info.dark',
+                                    p: 1.5,
+                                    borderRadius: 1,
+                                    borderLeft: '3px solid',
+                                    borderLeftColor: 'info.main'
+                                  }}
+                                >
+                                  {stage.notes}
+                                </Typography>
+                              </Box>
+                            )}
+                            
+                            {/* Quick Medicine Summary */}
+                            {stage.medicines.length > 0 && (
+                              <Box>
+                                <Typography variant="body2" fontWeight="600" color="success.dark" gutterBottom>
+                                  💊 İlaçlar ({stage.medicines.length})
+                                </Typography>
+                                <Stack direction="row" spacing={1} flexWrap="wrap">
+                                  {stage.medicines.slice(0, 3).map((medicine, idx) => (
+                                    <Box
+                                      key={idx}
+                                      sx={{
+                                        bgcolor: 'success.light',
+                                        color: 'success.dark',
+                                        px: 1.5,
+                                        py: 0.5,
+                                        borderRadius: 1,
+                                        fontSize: '0.75rem',
+                                        fontWeight: 500
+                                      }}
+                                    >
+                                      {medicine.name}
+                                    </Box>
+                                  ))}
+                                  {stage.medicines.length > 3 && (
+                                    <Box
+                                      sx={{
+                                        bgcolor: 'grey.200',
+                                        color: 'text.secondary',
+                                        px: 1.5,
+                                        py: 0.5,
+                                        borderRadius: 1,
+                                        fontSize: '0.75rem',
+                                        fontWeight: 500
+                                      }}
+                                    >
+                                      +{stage.medicines.length - 3} daha
+                                    </Box>
+                                  )}
+                                </Stack>
+                              </Box>
+                            )}
+                            
+                            {/* Photo Thumbnails */}
+                            {stage.eye_images.length > 0 && (
+                              <Box>
+                                <Typography variant="body2" fontWeight="600" color="info.dark" gutterBottom>
+                                  📷 Fotoğraflar ({stage.eye_images.length})
+                                </Typography>
+                                <Stack direction="row" spacing={1}>
+                                  {stage.eye_images.slice(0, 4).map((image, idx) => (
+                                    <Box
+                                      key={idx}
+                                      sx={{
+                                        width: 40,
+                                        height: 40,
+                                        borderRadius: 1,
+                                        overflow: 'hidden',
+                                        border: '2px solid white',
+                                        boxShadow: 1
+                                      }}
+                                    >
+                                      <img
+                                        src={image.image.startsWith('http') ? image.image : `${API_URL}${image.image}`}
+                                        alt="Göz"
+                                        style={{
+                                          width: '100%',
+                                          height: '100%',
+                                          objectFit: 'cover',
+                                          cursor: 'pointer'
+                                        }}
+                                                                                 onClick={() => {
+                                           const imageUrl = image.image.startsWith('http') ? image.image : `${API_URL}${image.image}`;
+                                           openImageViewer(imageUrl, image.id);
+                                         }}
+                                      />
+                                    </Box>
+                                  ))}
+                                  {stage.eye_images.length > 4 && (
+                                    <Box
+                                      sx={{
+                                        width: 40,
+                                        height: 40,
+                                        borderRadius: 1,
+                                        bgcolor: 'grey.200',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 600,
+                                        color: 'text.secondary'
+                                      }}
+                                    >
+                                      +{stage.eye_images.length - 4}
+                                    </Box>
+                                  )}
+                                </Stack>
+                              </Box>
+                            )}
+                          </Stack>
+                        </CardContent>
+                      </Card>
+                    </Box>
+                  );
+                })}
+              </Box>
             ) : (
+              // Card View (Default)
               <Stack spacing={3}>
                 {stages.map((stage, index) => (
                   <Card 
@@ -1011,7 +1774,7 @@ export default function VisitDetailPage() {
                                   }}
                                 >
                                   <img
-                                    src={`${API_URL}${image.image}`}
+                                    src={image.image.startsWith('http') ? image.image : `${API_URL}${image.image}`}
                                     alt="Göz Fotoğrafı"
                                     style={{
                                       width: 100,
@@ -1023,7 +1786,8 @@ export default function VisitDetailPage() {
                                       cursor: 'pointer'
                                     }}
                                     onClick={() => {
-                                      // TODO: Add image preview modal
+                                      const imageUrl = image.image.startsWith('http') ? image.image : `${API_URL}${image.image}`;
+                                      openImageViewer(imageUrl, image.id);
                                     }}
                                   />
                                 </Box>
@@ -1147,7 +1911,16 @@ export default function VisitDetailPage() {
         {/* Add Stage Modal */}
         <Modal
           open={showAddStageModal}
-          onClose={() => setShowAddStageModal(false)}
+          onClose={() => {
+            setShowAddStageModal(false);
+            // Clean up preview URLs
+            eyeImagePreviews.forEach(url => URL.revokeObjectURL(url));
+            setEyeImages([]);
+            setEyeImagePreviews([]);
+            setNewStageComplaint("");
+            setNewStageNotes("");
+            setMedicines([{ name: "", dosage: "", frequency: "", duration: "", notes: "" }]);
+          }}
           aria-labelledby="add-stage-modal"
         >
           <Box
@@ -1223,32 +1996,161 @@ export default function VisitDetailPage() {
                   <Typography variant="h6" gutterBottom>
                     📷 Göz Fotoğrafları
                   </Typography>
-                  <Button
-                    variant="outlined"
-                    component="label"
-                    fullWidth
-                    startIcon={<UploadIcon />}
-                    sx={{ 
-                      py: 2,
-                      borderStyle: 'dashed',
-                      '&:hover': { borderStyle: 'dashed' }
-                    }}
-                  >
-                    {eyeImages.length > 0 ? `${eyeImages.length} fotoğraf seçildi` : 'Göz fotoğrafları seç'}
-                    <input
-                      type="file"
-                      hidden
-                      multiple
-                      accept="image/*"
-                      onChange={(e) => {
-                        const files = Array.from(e.target.files || []);
-                        setEyeImages(files);
+                  
+                  {/* Image Preview Grid */}
+                  {eyeImages.length > 0 && (
+                    <Box sx={{ mb: 2 }}>
+                      <Box
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+                          gap: 2,
+                          mb: 2
+                        }}
+                      >
+                        {eyeImagePreviews.map((preview, index) => (
+                          <Box
+                            key={index}
+                            sx={{
+                              position: 'relative',
+                              aspectRatio: '1',
+                              borderRadius: 2,
+                              overflow: 'hidden',
+                              border: '2px solid',
+                              borderColor: 'primary.light',
+                              '&:hover .delete-btn': {
+                                opacity: 1
+                              }
+                            }}
+                          >
+                            <img
+                              src={preview}
+                              alt={`Göz fotoğrafı ${index + 1}`}
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover'
+                              }}
+                            />
+                            <IconButton
+                              className="delete-btn"
+                              onClick={() => removeEyeImage(index)}
+                              sx={{
+                                position: 'absolute',
+                                top: 4,
+                                right: 4,
+                                bgcolor: 'error.main',
+                                color: 'white',
+                                opacity: 0,
+                                transition: 'opacity 0.2s',
+                                '&:hover': {
+                                  bgcolor: 'error.dark'
+                                },
+                                width: 24,
+                                height: 24
+                              }}
+                            >
+                              <CloseIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                            <Box
+                              sx={{
+                                position: 'absolute',
+                                bottom: 0,
+                                left: 0,
+                                right: 0,
+                                bgcolor: 'rgba(0,0,0,0.7)',
+                                color: 'white',
+                                p: 0.5,
+                                fontSize: '0.75rem',
+                                textAlign: 'center'
+                              }}
+                            >
+                              {eyeImages[index]?.name.length > 15 
+                                ? eyeImages[index]?.name.substring(0, 15) + '...'
+                                : eyeImages[index]?.name
+                              }
+                            </Box>
+                          </Box>
+                        ))}
+                        
+                        {/* Add More Button */}
+                        <Box
+                          sx={{
+                            aspectRatio: '1',
+                            border: '2px dashed',
+                            borderColor: 'primary.light',
+                            borderRadius: 2,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            '&:hover': {
+                              borderColor: 'primary.main',
+                              bgcolor: 'primary.50'
+                            }
+                          }}
+                          component="label"
+                        >
+                          <AddIcon sx={{ fontSize: 32, color: 'primary.light', mb: 1 }} />
+                          <Typography variant="caption" color="primary.light" textAlign="center">
+                            Daha Fazla<br />Ekle
+                          </Typography>
+                          <input
+                            type="file"
+                            hidden
+                            multiple
+                            accept="image/*"
+                            onChange={(e) => {
+                              const files = Array.from(e.target.files || []);
+                              if (files.length > 0) {
+                                addMoreEyeImages(files);
+                              }
+                            }}
+                          />
+                        </Box>
+                      </Box>
+                    </Box>
+                  )}
+                  
+                  {/* Initial Upload Button */}
+                  {eyeImages.length === 0 && (
+                    <Button
+                      variant="outlined"
+                      component="label"
+                      fullWidth
+                      startIcon={<UploadIcon />}
+                      sx={{ 
+                        py: 3,
+                        borderStyle: 'dashed',
+                        borderWidth: 2,
+                        '&:hover': { 
+                          borderStyle: 'dashed',
+                          borderWidth: 2,
+                          bgcolor: 'primary.50'
+                        }
                       }}
-                    />
-                  </Button>
+                    >
+                      Göz fotoğrafları seç
+                      <input
+                        type="file"
+                        hidden
+                        multiple
+                        accept="image/*"
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          if (files.length > 0) {
+                            handleEyeImagesChange(files);
+                          }
+                        }}
+                      />
+                    </Button>
+                  )}
+                  
                   {eyeImages.length > 0 && (
                     <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                      {eyeImages.map(img => img.name).join(', ')}
+                      Toplam {eyeImages.length} fotoğraf seçildi
                     </Typography>
                   )}
                 </Box>
@@ -1368,7 +2270,14 @@ export default function VisitDetailPage() {
         {/* Edit Stage Modal */}
         <Modal
           open={editStageModal}
-          onClose={() => setEditStageModal(false)}
+          onClose={() => {
+            setEditStageModal(false);
+            // Clean up preview URLs
+            editStageEyeImagePreviews.forEach(url => URL.revokeObjectURL(url));
+            setEditStageEyeImages([]);
+            setEditStageEyeImagePreviews([]);
+            setEditStageExistingImages([]);
+          }}
           aria-labelledby="edit-stage-modal"
         >
           <Box
@@ -1442,34 +2351,251 @@ export default function VisitDetailPage() {
                 {/* Eye Images Section */}
                 <Box>
                   <Typography variant="h6" gutterBottom>
-                    📷 Yeni Göz Fotoğrafları Ekle
+                    📷 Göz Fotoğrafları
                   </Typography>
-                  <Button
-                    variant="outlined"
-                    component="label"
-                    fullWidth
-                    startIcon={<UploadIcon />}
-                    sx={{ 
-                      py: 2,
-                      borderStyle: 'dashed',
-                      '&:hover': { borderStyle: 'dashed' }
-                    }}
-                  >
-                    {editStageEyeImages.length > 0 ? `${editStageEyeImages.length} fotoğraf seçildi` : 'Yeni göz fotoğrafları seç'}
-                    <input
-                      type="file"
-                      hidden
-                      multiple
-                      accept="image/*"
-                      onChange={(e) => {
-                        const files = Array.from(e.target.files || []);
-                        setEditStageEyeImages(files);
+                  
+                  {/* Existing Images Grid */}
+                  {editStageExistingImages.length > 0 && (
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+                        Mevcut Fotoğraflar
+                      </Typography>
+                      <Box
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+                          gap: 2,
+                          mb: 2
+                        }}
+                      >
+                        {editStageExistingImages.map((image, index) => (
+                          <Box
+                            key={image.id}
+                            sx={{
+                              position: 'relative',
+                              aspectRatio: '1',
+                              borderRadius: 2,
+                              overflow: 'hidden',
+                              border: '2px solid',
+                              borderColor: 'success.light',
+                              '&:hover .delete-btn': {
+                                opacity: 1
+                              }
+                            }}
+                          >
+                            <img
+                              src={image.image}
+                              alt={`Mevcut göz fotoğrafı ${index + 1}`}
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover'
+                              }}
+                            />
+                            <IconButton
+                              className="delete-btn"
+                              onClick={() => removeExistingEyeImage(image.id)}
+                              sx={{
+                                position: 'absolute',
+                                top: 4,
+                                right: 4,
+                                bgcolor: 'error.main',
+                                color: 'white',
+                                opacity: 0,
+                                transition: 'opacity 0.2s',
+                                '&:hover': {
+                                  bgcolor: 'error.dark'
+                                },
+                                width: 24,
+                                height: 24
+                              }}
+                            >
+                              <CloseIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                            <Box
+                              sx={{
+                                position: 'absolute',
+                                bottom: 0,
+                                left: 0,
+                                right: 0,
+                                bgcolor: 'rgba(0,0,0,0.7)',
+                                color: 'white',
+                                p: 0.5,
+                                fontSize: '0.75rem',
+                                textAlign: 'center'
+                              }}
+                            >
+                              Mevcut
+                            </Box>
+                          </Box>
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+                  
+                  {/* New Images Section */}
+                  {(editStageEyeImages.length > 0 || editStageExistingImages.length > 0) && (
+                    <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+                      Yeni Fotoğraflar Ekle
+                    </Typography>
+                  )}
+                  
+                  {/* New Image Preview Grid */}
+                  {editStageEyeImages.length > 0 && (
+                    <Box sx={{ mb: 2 }}>
+                      <Box
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+                          gap: 2,
+                          mb: 2
+                        }}
+                      >
+                        {editStageEyeImagePreviews.map((preview, index) => (
+                          <Box
+                            key={index}
+                            sx={{
+                              position: 'relative',
+                              aspectRatio: '1',
+                              borderRadius: 2,
+                              overflow: 'hidden',
+                              border: '2px solid',
+                              borderColor: 'warning.light',
+                              '&:hover .delete-btn': {
+                                opacity: 1
+                              }
+                            }}
+                          >
+                            <img
+                              src={preview}
+                              alt={`Göz fotoğrafı ${index + 1}`}
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover'
+                              }}
+                            />
+                            <IconButton
+                              className="delete-btn"
+                              onClick={() => removeEditStageEyeImage(index)}
+                              sx={{
+                                position: 'absolute',
+                                top: 4,
+                                right: 4,
+                                bgcolor: 'error.main',
+                                color: 'white',
+                                opacity: 0,
+                                transition: 'opacity 0.2s',
+                                '&:hover': {
+                                  bgcolor: 'error.dark'
+                                },
+                                width: 24,
+                                height: 24
+                              }}
+                            >
+                              <CloseIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                            <Box
+                              sx={{
+                                position: 'absolute',
+                                bottom: 0,
+                                left: 0,
+                                right: 0,
+                                bgcolor: 'rgba(0,0,0,0.7)',
+                                color: 'white',
+                                p: 0.5,
+                                fontSize: '0.75rem',
+                                textAlign: 'center'
+                              }}
+                            >
+                              {editStageEyeImages[index]?.name.length > 15 
+                                ? editStageEyeImages[index]?.name.substring(0, 15) + '...'
+                                : editStageEyeImages[index]?.name
+                              }
+                            </Box>
+                          </Box>
+                        ))}
+                        
+                        {/* Add More Button */}
+                        <Box
+                          sx={{
+                            aspectRatio: '1',
+                            border: '2px dashed',
+                            borderColor: 'warning.light',
+                            borderRadius: 2,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            '&:hover': {
+                              borderColor: 'warning.main',
+                              bgcolor: 'warning.50'
+                            }
+                          }}
+                          component="label"
+                        >
+                          <AddIcon sx={{ fontSize: 32, color: 'warning.light', mb: 1 }} />
+                          <Typography variant="caption" color="warning.light" textAlign="center">
+                            Daha Fazla<br />Ekle
+                          </Typography>
+                          <input
+                            type="file"
+                            hidden
+                            multiple
+                            accept="image/*"
+                            onChange={(e) => {
+                              const files = Array.from(e.target.files || []);
+                              if (files.length > 0) {
+                                addMoreEditStageEyeImages(files);
+                              }
+                            }}
+                          />
+                        </Box>
+                      </Box>
+                    </Box>
+                  )}
+                  
+                  {/* Initial Upload Button */}
+                  {editStageEyeImages.length === 0 && (
+                    <Button
+                      variant="outlined"
+                      component="label"
+                      fullWidth
+                      startIcon={<UploadIcon />}
+                      sx={{ 
+                        py: 3,
+                        borderStyle: 'dashed',
+                        borderWidth: 2,
+                        borderColor: 'warning.main',
+                        color: 'warning.main',
+                        '&:hover': { 
+                          borderStyle: 'dashed',
+                          borderWidth: 2,
+                          bgcolor: 'warning.50'
+                        }
                       }}
-                    />
-                  </Button>
+                    >
+                      {editStageExistingImages.length > 0 ? 'Yeni fotoğraflar ekle' : 'Göz fotoğrafları seç'}
+                      <input
+                        type="file"
+                        hidden
+                        multiple
+                        accept="image/*"
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          if (files.length > 0) {
+                            handleEditStageEyeImagesChange(files);
+                          }
+                        }}
+                      />
+                    </Button>
+                  )}
+                  
                   {editStageEyeImages.length > 0 && (
                     <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                      {editStageEyeImages.map(img => img.name).join(', ')}
+                      Toplam {editStageEyeImages.length} yeni fotoğraf seçildi
                     </Typography>
                   )}
                 </Box>
@@ -1718,6 +2844,359 @@ export default function VisitDetailPage() {
             </Box>
           </Box>
         </Modal>
+
+        {/* Image Viewer Modal */}
+        <Modal
+          open={imageViewerOpen}
+          onClose={closeImageViewer}
+          aria-labelledby="image-viewer-modal"
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            bgcolor: 'rgba(0, 0, 0, 0.9)'
+          }}
+        >
+          <Box
+            sx={{
+              position: 'relative',
+              maxWidth: '95vw',
+              maxHeight: '95vh',
+              outline: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            onMouseDown={!drawingMode ? handleMouseDown : undefined}
+            onMouseMove={!drawingMode ? handleMouseMove : undefined}
+            onMouseUp={!drawingMode ? handleMouseUp : undefined}
+            onMouseLeave={!drawingMode ? handleMouseUp : undefined}
+            onWheel={!drawingMode ? handleWheel : undefined}
+          >
+            {/* Image Container */}
+            <Box sx={{ position: 'relative', display: 'inline-block' }}>
+              <img
+                src={currentImage}
+                alt="Büyütülmüş Göz Fotoğrafı"
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  transform: drawingMode ? 'none' : `scale(${imageScale}) translate(${imagePosition.x}px, ${imagePosition.y}px)`,
+                  transformOrigin: 'center',
+                  transition: isDragging ? 'none' : 'transform 0.2s ease',
+                  cursor: drawingMode ? 'crosshair' : (imageScale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'),
+                  userSelect: 'none',
+                  pointerEvents: drawingMode ? 'none' : 'auto',
+                  display: 'block'
+                }}
+                onLoad={(e) => {
+                  const img = e.target as HTMLImageElement;
+                  if (drawingMode && canvasRef) {
+                    initializeCanvas(canvasRef, img, false); // Don't clear on image load
+                  }
+                }}
+              />
+              
+              {/* Drawing Canvas */}
+              {drawingMode && (
+                <canvas
+                  ref={(ref) => {
+                    setCanvasRef(ref);
+                    if (ref) {
+                      // Initialize canvas when ref is set
+                      const img = ref.previousElementSibling as HTMLImageElement;
+                      if (img && img.complete) {
+                        console.log('Initializing canvas from ref callback');
+                        initializeCanvas(ref, img, false); // Don't clear on ref set
+                      }
+                    }
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    cursor: 'crosshair',
+                    pointerEvents: 'auto',
+                    zIndex: 10
+                  }}
+                  onMouseDown={(e) => {
+                    console.log('Canvas mouse down event');
+                    startDrawing(e);
+                  }}
+                  onMouseMove={(e) => {
+                    if (isDrawing) console.log('Drawing...');
+                    draw(e);
+                  }}
+                  onMouseUp={stopDrawing}
+                  onMouseLeave={stopDrawing}
+                />
+              )}
+            </Box>
+
+            {/* Control Buttons */}
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 16,
+                right: 16,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1,
+                zIndex: 20 // Higher than canvas z-index
+              }}
+            >
+              {/* Top Row - Main Controls */}
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                {!drawingMode && (
+                  <>
+                    <IconButton
+                      onClick={zoomOut}
+                      disabled={imageScale <= 0.5}
+                      sx={{
+                        bgcolor: 'rgba(255, 255, 255, 0.9)',
+                        color: 'black',
+                        cursor: 'pointer',
+                        '&:hover': { bgcolor: 'white', cursor: 'pointer' },
+                        '&:disabled': { bgcolor: 'rgba(255, 255, 255, 0.5)', cursor: 'not-allowed' }
+                      }}
+                    >
+                      <ZoomOutIcon />
+                    </IconButton>
+                    
+                    <IconButton
+                      onClick={resetZoom}
+                      sx={{
+                        bgcolor: 'rgba(255, 255, 255, 0.9)',
+                        color: 'black',
+                        cursor: 'pointer',
+                        '&:hover': { bgcolor: 'white', cursor: 'pointer' }
+                      }}
+                    >
+                      <FullscreenIcon />
+                    </IconButton>
+                    
+                    <IconButton
+                      onClick={zoomIn}
+                      disabled={imageScale >= 3}
+                      sx={{
+                        bgcolor: 'rgba(255, 255, 255, 0.9)',
+                        color: 'black',
+                        cursor: 'pointer',
+                        '&:hover': { bgcolor: 'white', cursor: 'pointer' },
+                        '&:disabled': { bgcolor: 'rgba(255, 255, 255, 0.5)', cursor: 'not-allowed' }
+                      }}
+                    >
+                      <ZoomInIcon />
+                    </IconButton>
+                  </>
+                )}
+                
+                <Tooltip 
+                  title={drawingMode ? 'İşaretleme modundan çık (tekrar tıklayın)' : 'İşaretleme moduna geç'}
+                  placement="left"
+                >
+                  <IconButton
+                    onClick={toggleDrawingMode}
+                    sx={{
+                      bgcolor: drawingMode ? 'rgba(255, 0, 0, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+                      color: drawingMode ? 'white' : 'black',
+                      cursor: 'pointer',
+                      '&:hover': {
+                        bgcolor: drawingMode ? 'rgba(255, 0, 0, 1)' : 'white',
+                        cursor: 'pointer'
+                      },
+                      border: drawingMode ? '2px solid #ffffff' : 'none'
+                    }}
+                  >
+                    <BrushIcon />
+                  </IconButton>
+                </Tooltip>
+                
+                <IconButton
+                  onClick={closeImageViewer}
+                  sx={{
+                    bgcolor: 'rgba(255, 255, 255, 0.9)',
+                    color: 'black',
+                    cursor: 'pointer',
+                    '&:hover': { bgcolor: 'white', cursor: 'pointer' }
+                  }}
+                >
+                  <CloseIcon />
+                </IconButton>
+              </Box>
+
+              {/* Drawing Controls */}
+              {drawingMode && (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {/* Color Picker */}
+                  <IconButton
+                    onClick={(e) => setColorMenuAnchor(e.currentTarget)}
+                    sx={{
+                      bgcolor: 'rgba(255, 255, 255, 0.9)',
+                      color: 'black',
+                      cursor: 'pointer',
+                      '&:hover': { bgcolor: 'white', cursor: 'pointer' }
+                    }}
+                  >
+                    <PaletteIcon />
+                  </IconButton>
+                  
+                  {/* Clear Drawing */}
+                  <IconButton
+                    onClick={clearDrawing}
+                    sx={{
+                      bgcolor: 'rgba(255, 255, 255, 0.9)',
+                      color: 'black',
+                      cursor: 'pointer',
+                      '&:hover': { bgcolor: 'white', cursor: 'pointer' }
+                    }}
+                  >
+                    <UndoIcon />
+                  </IconButton>
+                </Box>
+              )}
+            </Box>
+
+            {/* Color Menu */}
+            <Menu
+              anchorEl={colorMenuAnchor}
+              open={Boolean(colorMenuAnchor)}
+              onClose={() => setColorMenuAnchor(null)}
+            >
+              {['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#000000', '#ffffff'].map((color) => (
+                <MenuItem
+                  key={color}
+                  onClick={() => {
+                    setBrushColor(color);
+                    setColorMenuAnchor(null);
+                  }}
+                  sx={{ minWidth: 'auto', p: 1 }}
+                >
+                  <Box
+                    sx={{
+                      width: 24,
+                      height: 24,
+                      bgcolor: color,
+                      border: '2px solid',
+                      borderColor: color === brushColor ? 'primary.main' : 'grey.300',
+                      borderRadius: 1
+                    }}
+                  />
+                </MenuItem>
+              ))}
+            </Menu>
+
+            {/* Brush Size Control */}
+            {drawingMode && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  bottom: 60,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  bgcolor: 'rgba(255, 255, 255, 0.9)',
+                  px: 2,
+                  py: 1,
+                  borderRadius: 2,
+                  minWidth: 200
+                }}
+              >
+                <Typography variant="caption" color="black" fontWeight="600">
+                  Fırça Boyutu: {brushSize}px
+                </Typography>
+                <Slider
+                  value={brushSize}
+                  onChange={(_, value) => setBrushSize(value as number)}
+                  min={1}
+                  max={20}
+                  size="small"
+                  sx={{ color: 'primary.main' }}
+                />
+              </Box>
+            )}
+
+            {/* Zoom Info */}
+            {!drawingMode && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  bottom: 16,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  bgcolor: 'rgba(255, 255, 255, 0.9)',
+                  px: 2,
+                  py: 1,
+                  borderRadius: 2,
+                  color: 'black',
+                  fontSize: '0.875rem',
+                  fontWeight: 500
+                }}
+              >
+                {Math.round(imageScale * 100)}% - Mouse tekerleği ile yakınlaştır/uzaklaştır
+              </Box>
+            )}
+
+            {/* Drawing Mode Info */}
+            {drawingMode && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  bottom: 16,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  bgcolor: 'rgba(255, 255, 255, 0.9)',
+                  px: 2,
+                  py: 1,
+                  borderRadius: 2,
+                  color: 'black',
+                  fontSize: '0.875rem',
+                  fontWeight: 500
+                }}
+              >
+                İşaretleme Modu Aktif - Çizim için mouse kullanın • Çıkmak için fırça butonuna tekrar tıklayın
+              </Box>
+            )}
+          </Box>
+        </Modal>
+
+        {/* Save Drawing Dialog */}
+        <Dialog
+          open={saveDialogOpen}
+          onClose={() => setSaveDialogOpen(false)}
+          aria-labelledby="save-dialog-title"
+        >
+          <DialogTitle id="save-dialog-title">
+            <SaveIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+            İşaretlenmiş Fotoğrafı Kaydet
+          </DialogTitle>
+          <DialogContent>
+            <Typography variant="body1" sx={{ mb: 2 }}>
+              Fotoğraf üzerinde yaptığınız işaretlemeler var. Bu değişiklikleri kaydetmek istiyor musunuz?
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              • Kaydet: Eski fotoğraf silinir, işaretlenmiş fotoğraf kaydedilir
+              <br />
+              • Kaydetme: Değişiklikler kaybolur, orijinal fotoğraf korunur
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button
+              onClick={discardChanges}
+              color="inherit"
+              variant="outlined"
+            >
+              Kaydetme
+            </Button>
+            <Button
+              onClick={saveAnnotatedImage}
+              color="primary"
+              variant="contained"
+              startIcon={<SaveIcon />}
+            >
+              Kaydet
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {/* Floating Action Buttons */}
         <Box
