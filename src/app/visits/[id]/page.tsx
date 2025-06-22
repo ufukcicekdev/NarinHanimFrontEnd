@@ -25,7 +25,8 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Tooltip
+  Tooltip,
+  Snackbar
 } from "@mui/material";
 import {
   Edit as EditIcon,
@@ -61,6 +62,14 @@ interface StageMedicine {
   duration: string;
   notes: string;
   created_at: string;
+  production_orders?: ProductionOrder[];
+}
+
+interface ProductionOrder {
+  id: number;
+  status: string;
+  created_at: string;
+  completed_at?: string;
 }
 
 interface VisitStage {
@@ -167,6 +176,11 @@ export default function VisitDetailPage() {
   }[]>([{ name: "", dosage: "", frequency: "", duration: "", notes: "" }]);
   
   const [addingStage, setAddingStage] = useState(false);
+  
+  // Snackbar states for notifications
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState("");
+  const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "error" | "info" | "warning">("success");
   
   const router = useRouter();
 
@@ -600,6 +614,134 @@ export default function VisitDetailPage() {
       minute: '2-digit',
       weekday: 'long'
     });
+  };
+
+  const handleCreateProductionOrder = async (medicineId: number, status: string) => {
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      router.push("/login");
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/api/stage-medicines/${medicineId}/create_production_order/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status }),
+      });
+
+      if (res.ok) {
+        const statusText = status === 'package_prepare' ? 'Paketi Hazırla' :
+                          status === 'send_production' ? 'Üretime Gönder' :
+                          'Kargoyu Hazırla';
+        
+        // Success notification göster
+        showNotification(`🎉 ${statusText} işlemi başarıyla oluşturuldu! Lojistik ekibi bilgilendirildi.`, "success");
+        
+        // Refresh visit data to update button states
+        const visitRes = await fetch(`${API_URL}/api/visits/${id}/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (visitRes.ok) {
+          const visitData = await visitRes.json();
+          setStages(visitData.stages || []);
+        }
+      } else {
+        showNotification('❌ İşlem oluşturulamadı. Lütfen tekrar deneyin.', "error");
+      }
+    } catch {
+      showNotification('❌ Bağlantı hatası. Lütfen internet bağlantınızı kontrol edin.', "error");
+    }
+  };
+
+  // Check if a medicine has a specific production order status
+  const getMedicineProductionStatus = (medicine: StageMedicine): string | null => {
+    if (!medicine.production_orders || medicine.production_orders.length === 0) {
+      return null;
+    }
+    
+    // Get the latest status based on created_at
+    const latestOrder = medicine.production_orders.reduce((latest, current) => {
+      return new Date(current.created_at) > new Date(latest.created_at) ? current : latest;
+    });
+    
+    return latestOrder.status;
+  };
+
+  // Check if a button should be disabled
+  const isButtonDisabled = (medicine: StageMedicine, buttonStatus: string): boolean => {
+    const currentStatus = getMedicineProductionStatus(medicine);
+    
+    if (!currentStatus) return false; // No orders yet, all buttons enabled
+    
+    // Status grupları
+    const packageStatuses = ['package_requested', 'package_preparing', 'package_ready'];
+    const productionStatuses = ['production_requested', 'production_preparing', 'production_sent', 'production_completed'];
+    const cargoStatuses = ['cargo_requested', 'cargo_preparing', 'cargo_ready', 'cargo_shipped'];
+    
+    // Eğer tamamlandıysa tüm butonlar disabled
+    if (currentStatus === 'completed') return true;
+    
+    // Hangi aşamada olduğumuzu kontrol et
+    if (buttonStatus === 'package_prepare') {
+      return packageStatuses.includes(currentStatus) || 
+             productionStatuses.includes(currentStatus) || 
+             cargoStatuses.includes(currentStatus);
+    }
+    
+    if (buttonStatus === 'send_production') {
+      return productionStatuses.includes(currentStatus) || 
+             cargoStatuses.includes(currentStatus);
+    }
+    
+    if (buttonStatus === 'prepare_cargo') {
+      return cargoStatuses.includes(currentStatus);
+    }
+    
+    return false;
+  };
+
+  // Get status display text
+  const getStatusDisplayText = (medicine: StageMedicine): string => {
+    const status = getMedicineProductionStatus(medicine);
+    if (!status) return '';
+    
+    const statusTexts = {
+      // Paket Hazırlama
+      'package_requested': '📦 Paket Hazırlama Talep Edildi', 
+      'package_preparing': '⏳ Paket Hazırlanıyor',
+      'package_ready': '✅ Paket Hazırlandı',
+      
+      // Üretim
+      'production_requested': '🏭 Üretime Gönderme Talep Edildi',
+      'production_preparing': '⏳ Üretime Hazırlanıyor', 
+      'production_sent': '🚀 Üretime Gönderildi',
+      'production_completed': '✅ Üretim Tamamlandı',
+      
+      // Kargo
+      'cargo_requested': '🚚 Kargo Hazırlama Talep Edildi',
+      'cargo_preparing': '⏳ Kargo Hazırlanıyor',
+      'cargo_ready': '📦 Kargo Hazırlandı', 
+      'cargo_shipped': '🚛 Kargoya Verildi',
+      
+      // Tamamlama
+      'completed': '🎉 Tamamlandı'
+    };
+    
+    return statusTexts[status as keyof typeof statusTexts] || '';
+  };
+
+  const showNotification = (message: string, severity: "success" | "error" | "info" | "warning") => {
+    setSnackbarMessage(message);
+    setSnackbarSeverity(severity);
+    setSnackbarOpen(true);
+  };
+
+  const handleSnackbarClose = () => {
+    setSnackbarOpen(false);
   };
 
   // Image viewer functions
@@ -1848,7 +1990,7 @@ export default function VisitDetailPage() {
                                     }
                                   }}
                                 >
-                                  <Stack spacing={1.5}>
+                                                                      <Stack spacing={1.5}>
                                     <Typography variant="body1" fontWeight="600" color="success.dark">
                                       💊 {medicine.name}
                                     </Typography>
@@ -1877,6 +2019,65 @@ export default function VisitDetailPage() {
                                           {medicine.duration}
                                         </Typography>
                                       </Box>
+                                    </Stack>
+                                    
+                                    {/* Durum Göstergesi */}
+                                    {getStatusDisplayText(medicine) && (
+                                      <Box sx={{ 
+                                        mt: 1, 
+                                        p: 1, 
+                                        bgcolor: 'success.50', 
+                                        borderRadius: 1,
+                                        border: '1px solid',
+                                        borderColor: 'success.200'
+                                      }}>
+                                        <Typography variant="caption" fontWeight="600" color="success.dark">
+                                          {getStatusDisplayText(medicine)}
+                                        </Typography>
+                                      </Box>
+                                    )}
+
+                                    {/* Lojistik İşlem Butonları */}
+                                    <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mt: 2 }}>
+                                      <Button
+                                        size="small"
+                                        variant={isButtonDisabled(medicine, 'package_prepare') ? 'contained' : 'outlined'}
+                                        color="primary"
+                                        disabled={isButtonDisabled(medicine, 'package_prepare')}
+                                        onClick={() => handleCreateProductionOrder(medicine.id, 'package_prepare')}
+                                        sx={{ 
+                                          fontSize: '0.75rem',
+                                          opacity: isButtonDisabled(medicine, 'package_prepare') ? 0.7 : 1
+                                        }}
+                                      >
+                                        📦 Paketi Hazırla
+                                      </Button>
+                                      <Button
+                                        size="small"
+                                        variant={isButtonDisabled(medicine, 'send_production') ? 'contained' : 'outlined'}
+                                        color="warning"
+                                        disabled={isButtonDisabled(medicine, 'send_production')}
+                                        onClick={() => handleCreateProductionOrder(medicine.id, 'send_production')}
+                                        sx={{ 
+                                          fontSize: '0.75rem',
+                                          opacity: isButtonDisabled(medicine, 'send_production') ? 0.7 : 1
+                                        }}
+                                      >
+                                        🏭 Üretime Gönder
+                                      </Button>
+                                      <Button
+                                        size="small"
+                                        variant={isButtonDisabled(medicine, 'prepare_cargo') ? 'contained' : 'outlined'}
+                                        color="success"
+                                        disabled={isButtonDisabled(medicine, 'prepare_cargo')}
+                                        onClick={() => handleCreateProductionOrder(medicine.id, 'prepare_cargo')}
+                                        sx={{ 
+                                          fontSize: '0.75rem',
+                                          opacity: isButtonDisabled(medicine, 'prepare_cargo') ? 0.7 : 1
+                                        }}
+                                      >
+                                        🚚 Kargoyu Hazırla
+                                      </Button>
                                     </Stack>
                                     {medicine.notes && (
                                       <Box
@@ -3259,6 +3460,26 @@ export default function VisitDetailPage() {
             </Box>
           </Stack>
         </Box>
+
+        {/* Notification Snackbar */}
+        <Snackbar
+          open={snackbarOpen}
+          autoHideDuration={6000}
+          onClose={handleSnackbarClose}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+          <Alert 
+            onClose={handleSnackbarClose} 
+            severity={snackbarSeverity}
+            sx={{ 
+              width: '100%',
+              fontSize: '1rem',
+              fontWeight: 'medium'
+            }}
+          >
+            {snackbarMessage}
+          </Alert>
+        </Snackbar>
       </Container>
     </ClientLayout>
   );

@@ -59,7 +59,16 @@ export default function LoginPage() {
       const data = await res.json();
       localStorage.setItem("access_token", data.access);
       localStorage.setItem("refresh_token", data.refresh);
-      router.push("/patients");
+      localStorage.setItem("user_type", data.user_type);
+      localStorage.setItem("user_id", data.user_id);
+      localStorage.setItem("username", data.username);
+      
+      // Kullanıcı tipine göre yönlendirme
+      if (data.user_type === 'logistic') {
+        router.push("/logistic");
+      } else {
+        router.push("/patients");
+      }
     } catch {
       setError("Giriş başarısız. Lütfen tekrar deneyin.");
     }
