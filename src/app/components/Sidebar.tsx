@@ -23,6 +23,7 @@ import {
   Menu as MenuIcon,
   LocalHospital as HospitalIcon,
 } from "@mui/icons-material";
+import NotificationBell from './NotificationBell';
 
 const drawerWidth = 280;
 
@@ -216,9 +217,10 @@ export default function Sidebar() {
               <MenuIcon />
             </IconButton>
             <HospitalIcon sx={{ mr: 1 }} />
-            <Typography variant="h6" noWrap component="div">
+            <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
               Narin Hanım
             </Typography>
+            <NotificationBell />
           </Toolbar>
         </AppBar>
       )}

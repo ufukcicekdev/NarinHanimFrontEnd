@@ -26,6 +26,16 @@ export default function RootLayout({
     <html lang="tr">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
+        <script dangerouslySetInnerHTML={{
+          __html: `
+            // Browser bildirimlerini engelle
+            if ('Notification' in window) {
+              Notification.requestPermission = function() {
+                return Promise.resolve('denied');
+              };
+            }
+          `
+        }} />
       </body>
     </html>
   );
